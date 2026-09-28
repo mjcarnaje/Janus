@@ -94,6 +94,15 @@ public final class DesktopLaunchers: @unchecked Sendable {
         desktopRoot.appendingPathComponent("profiles/\(id.uuidString)", isDirectory: true)
     }
 
+    /// The figures this account's desktop app last logged, if it has ever run.
+    ///
+    /// A file read and nothing more: no keychain, no network. Cheap enough to
+    /// do on every tick.
+    public func recordedUsage(for id: UUID) -> Usage? {
+        let history = dataDirectory(for: id).appendingPathComponent("plan-usage-history.json")
+        return fileManager.contents(atPath: history.path).flatMap { Usage(desktopHistory: $0) }
+    }
+
     public func logoURL(for id: UUID) -> URL {
         logosDirectory.appendingPathComponent("\(id.uuidString).png")
     }

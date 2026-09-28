@@ -95,6 +95,57 @@ public struct Usage: Equatable {
         read(limits)
     }
 
+    /// Builds a reading from the Claude desktop app's `plan-usage-history.json`,
+    /// taking its newest sample.
+    ///
+    /// The app writes one sample every quarter of an hour or so while it is open,
+    /// as `{"t": <ms>, "u": {"fh": <5-hour %>, "sd": <7-day %>}}`. It records no
+    /// reset times, so the windows come back without one; `carryingResets(from:)`
+    /// is how they get one back.
+    public init?(desktopHistory data: Data) {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let samples = root["samples"] as? [[String: Any]]
+        else { return nil }
+
+        let newest = samples
+            .compactMap { sample -> (Date, [String: Any])? in
+                guard let milliseconds = (sample["t"] as? NSNumber)?.doubleValue,
+                      let used = sample["u"] as? [String: Any]
+                else { return nil }
+                return (Date(timeIntervalSince1970: milliseconds / 1000), used)
+            }
+            .max { $0.0 < $1.0 }
+        guard let (moment, used) = newest else { return nil }
+
+        measuredAt = moment
+        fiveHour = Usage.percent(used["fh"]).map { Window(percentUsed: $0, resetsAt: nil) }
+        sevenDay = Usage.percent(used["sd"]).map { Window(percentUsed: $0, resetsAt: nil) }
+        if isEmpty { return nil }
+    }
+
+    /// These figures, with reset times borrowed from an older reading wherever
+    /// that reading's window was still running when these were measured.
+    ///
+    /// A reset time belongs to a window rather than to a measurement, so a later
+    /// figure from the same window inherits it. A window that had already turned
+    /// over by then is a new window whose end nobody here knows, and is left
+    /// without one rather than given the old one's.
+    public func carryingResets(from older: Usage?) -> Usage {
+        guard let older, let moment = measuredAt else { return self }
+
+        func carry(_ window: Window?, _ previous: Window?) -> Window? {
+            guard let window, window.resetsAt == nil,
+                  let resetsAt = previous?.resetsAt, resetsAt > moment
+            else { return window }
+            return Window(percentUsed: window.percentUsed, resetsAt: resetsAt)
+        }
+
+        var carried = self
+        carried.fiveHour = carry(fiveHour, older.fiveHour)
+        carried.sevenDay = carry(sevenDay, older.sevenDay)
+        return carried
+    }
+
     private mutating func read(_ limits: [String: Any]) {
         fiveHour = Usage.window(limits["five_hour"])
         sevenDay = Usage.window(limits["seven_day"])
@@ -149,6 +200,11 @@ public enum UsageSource: Equatable, Sendable {
 
     /// Asked of Anthropic just now, for an account that need not be signed in.
     case fetched
+
+    /// Logged by this account's Claude desktop app while it was open. Free to
+    /// read and signed in on its own, which makes it the fallback for an account
+    /// whose saved Claude Code sign-in cannot be fetched with.
+    case desktopApp
 }
 
 /// Durations phrased the way someone deciding whether to keep working would want

@@ -57,6 +57,11 @@ final class AccountsModel: ObservableObject {
     /// re-reading the disk cannot quietly undo them.
     private var fetched: [UUID: Usage] = [:]
 
+    /// Why the last fetch for each account failed, cleared by the next one that
+    /// succeeds. Kept per account so the row can say it, rather than go on
+    /// advising a Refresh that has already been tried.
+    @Published private(set) var fetchFailures: [UUID: String] = [:]
+
     private let switcher: Switcher
     let launchers: DesktopLaunchers
     private var ticker: Timer?
@@ -97,6 +102,10 @@ final class AccountsModel: ObservableObject {
 
     func reading(for profile: Profile) -> Reading? {
         readings[profile.id]
+    }
+
+    func fetchFailure(for profile: Profile) -> String? {
+        fetchFailures[profile.id]
     }
 
     // MARK: - The clock
@@ -160,7 +169,8 @@ final class AccountsModel: ObservableObject {
             let reading = best(onDisk: switcher.usage(for: profile, isActive: live),
                                from: live ? .liveSettings : .savedSettings,
                                fetched: fetched[profile.id])
-            if let reading { readings[profile.id] = reading }
+            let desktop = launchers.recordedUsage(for: profile.id)
+            if let reading = newer(desktop, than: reading) { readings[profile.id] = reading }
         }
 
         self.restorable = restorable
@@ -170,6 +180,7 @@ final class AccountsModel: ObservableObject {
         // An account that has been removed keeps nothing behind it.
         let known = Set(roster.profiles.map(\.id))
         fetched = fetched.filter { known.contains($0.key) }
+        fetchFailures = fetchFailures.filter { known.contains($0.key) }
     }
 
     /// Which of the two sets of figures for an account to believe.
@@ -192,6 +203,22 @@ final class AccountsModel: ObservableObject {
             return Reading(usage: onDisk, source: source)
         }
         return Reading(usage: fetched, source: .fetched)
+    }
+
+    /// The desktop app's figures in place of `reading`, when they are newer by
+    /// more than a second.
+    ///
+    /// They carry no reset times of their own, so they borrow the ones `reading`
+    /// knows for any window still running when the app took its sample. That
+    /// keeps "resets in …" on screen, and keeps the tick able to see a reset
+    /// coming.
+    private func newer(_ desktop: Usage?, than reading: Reading?) -> Reading? {
+        guard let desktop, let logged = desktop.measuredAt else { return reading }
+        if let reading, let measured = reading.usage.measuredAt,
+           logged <= measured.addingTimeInterval(1) {
+            return reading
+        }
+        return Reading(usage: desktop.carryingResets(from: reading?.usage), source: .desktopApp)
     }
 
     // MARK: - Asking Anthropic
@@ -259,7 +286,11 @@ final class AccountsModel: ObservableObject {
                 }
             }
 
-            for (id, usage) in measured { fetched[id] = usage }
+            for (id, usage) in measured {
+                fetched[id] = usage
+                fetchFailures[id] = nil
+            }
+            for (id, reason) in refused { fetchFailures[id] = reason }
             now = Date()
             reload()
 
@@ -357,6 +388,10 @@ final class AccountsModel: ObservableObject {
         isWorking = true
         outcome = nil
         failure = nil
+        // A switch or a save is how a refused sign-in gets mended, so what the
+        // last fetch said stops being true here. The next fetch says it again
+        // if it still is.
+        fetchFailures = [:]
 
         // macOS draws a keychain prompt in front of the app that asked for it, so
         // an app still in the background gets one nobody can see, and every button

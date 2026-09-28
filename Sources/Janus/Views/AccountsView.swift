@@ -35,6 +35,7 @@ struct AccountsView: View {
                                 isActive: model.isActive(profile),
                                 isBusy: model.isWorking,
                                 reading: model.reading(for: profile),
+                                fetchFailure: model.fetchFailure(for: profile),
                                 now: model.now,
                                 canRestore: model.canRestore(profile),
                                 canMoveUp: index > 0,
@@ -234,6 +235,8 @@ struct AccountRow: View {
     let isActive: Bool
     let isBusy: Bool
     let reading: Reading?
+    /// Why the last attempt to fetch this account's figures failed, if it did.
+    var fetchFailure: String? = nil
     let now: Date
     let canRestore: Bool
     let canMoveUp: Bool
@@ -305,7 +308,12 @@ struct AccountRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let reading, !reading.usage.isEmpty {
                     UsagePanel(usage: reading.usage, source: reading.source, now: now,
-                               provider: provider)
+                               provider: provider, failure: fetchFailure)
+                } else if let fetchFailure {
+                    Text(fetchFailure)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(isActive ? "Signed in" : unmeasured)
                         .font(.caption)

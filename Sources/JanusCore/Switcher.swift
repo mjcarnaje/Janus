@@ -264,6 +264,11 @@ public final class Switcher: Sendable {
         stamp(&roster, active: target.id)
         try vault.save(roster)
 
+        // Switching still goes ahead: signing in again is the way out, and it has
+        // to happen as this account.
+        if Credentials.isSignedOut(replacement.credentials) {
+            notes.append("This account was saved signed out. Run /login in Claude Code to sign it back in.")
+        }
         notes.append("Restart any running Claude Code session to pick this up.")
         return Outcome("Switched to \(target.email).", notes: notes)
     }

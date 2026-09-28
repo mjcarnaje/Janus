@@ -117,6 +117,19 @@ final class DesktopLauncherTests: XCTestCase {
         XCTAssertFalse(launchers.dataDirectory(for: ramit.id).path.contains("ramit@"))
     }
 
+    func testReadsTheUsageTheDesktopAppLogged() throws {
+        let directory = launchers.dataDirectory(for: ramit.id)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"{"version":2,"samples":[{"t":1790613838650,"org":"o","u":{"fh":32,"sd":10}}]}"#.utf8)
+            .write(to: directory.appendingPathComponent("plan-usage-history.json"))
+
+        XCTAssertEqual(launchers.recordedUsage(for: ramit.id)?.fiveHour?.percentUsed, 32)
+    }
+
+    func testAnAccountWhoseDesktopAppNeverRanHasNoLoggedUsage() {
+        XCTAssertNil(launchers.recordedUsage(for: ramit.id))
+    }
+
     // MARK: - Updating
 
     func testASecondSyncWithNothingChangedTouchesNothing() throws {

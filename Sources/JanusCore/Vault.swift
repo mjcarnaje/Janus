@@ -67,7 +67,16 @@ public final class Vault: Sendable {
     /// Writes a session into the account's slot, replacing whatever was there.
     public func store(_ session: StoredSession, for id: UUID) throws {
         try prepareDirectories()
-        try secrets.write(session.credentials, to: credentialAddress(for: id))
+
+        // A signed-out blob never replaces tokens that still exist. Claude Code
+        // empties its tokens when a sign-in lapses or is logged out, and saving
+        // that over the copy here would throw away the only way back into the
+        // account. The settings file is still saved, so its figures keep up.
+        let address = credentialAddress(for: id)
+        if !Credentials.isSignedOut(session.credentials)
+            || !hasUsableCredentials(at: address) {
+            try secrets.write(session.credentials, to: address)
+        }
 
         let destination = settingsURL(for: id)
         try session.settings.write(to: destination, options: .atomic)
@@ -106,8 +115,14 @@ public final class Vault: Sendable {
     /// `security` and land in a partition Janus can reopen without a prompt.
     public func credentials(for id: UUID) throws -> Credentials {
         let raw = try secrets.read(credentialAddress(for: id))
+        if Credentials.isSignedOut(raw) { throw VaultError.signedOut(id) }
         guard let parsed = Credentials(raw) else { throw VaultError.unreadableCredentials(id) }
         return parsed
+    }
+
+    private func hasUsableCredentials(at address: SecretAddress) -> Bool {
+        guard secrets.contains(address), let raw = try? secrets.read(address) else { return false }
+        return Credentials(raw) != nil
     }
 
     /// Puts renewed tokens in the place of the ones they replace.
@@ -199,6 +214,7 @@ public enum VaultError: LocalizedError, Equatable {
     case unreadableRoster(URL)
     case noSavedSession(UUID)
     case unreadableCredentials(UUID)
+    case signedOut(UUID)
 
     public var errorDescription: String? {
         switch self {
@@ -208,6 +224,11 @@ public enum VaultError: LocalizedError, Equatable {
             return "This account has no saved session. Sign in as it and add it again."
         case .unreadableCredentials:
             return "The saved tokens for this account are not in a shape Janus understands."
+        case .signedOut:
+            return """
+                   Claude Code had signed this account out when it was saved, so there are no \
+                   tokens to ask with. Switch to it, sign in again, and switch back.
+                   """
         }
     }
 }

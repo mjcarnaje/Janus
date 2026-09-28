@@ -132,6 +132,10 @@ struct UsagePanel: View {
     let now: Date
     var provider = "Anthropic"
 
+    /// Why the last fetch for this account failed. Said in place of the advice to
+    /// press Refresh, which has just been shown not to help.
+    var failure: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             if let window = usage.fiveHour {
@@ -152,7 +156,12 @@ struct UsagePanel: View {
             .font(.caption2)
             .foregroundStyle(.tertiary)
 
-            if let advice {
+            if let failure {
+                Text(failure)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let advice {
                 Text(advice)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -178,6 +187,10 @@ struct UsagePanel: View {
         case .savedSettings:
             guard let measured else { return "from the last saved session" }
             return "measured \(measured), when last signed in"
+
+        case .desktopApp:
+            guard let measured else { return "from the Claude app" }
+            return "measured \(measured) in the Claude app"
         }
     }
 

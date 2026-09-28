@@ -253,6 +253,58 @@ final class FetchTests: XCTestCase {
         XCTAssertEqual(String(decoding: raw, as: UTF8.self), "example-not-json-at-all",
                        "a session Janus cannot read is still a session that switching restores")
     }
+
+    // MARK: - Signed out
+
+    func testAnAccountSavedSignedOutSaysSoRatherThanUnreadable() async throws {
+        let sandbox = try Sandbox()
+        try sandbox.signIn(email: "parked@example.com",
+                           credentials: Sandbox.oauthBlob(access: "", refresh: ""))
+        try sandbox.switcher.adoptCurrentAccount()
+        try sandbox.signIn(email: "live@example.com", credentials: Sandbox.oauthBlob())
+        try sandbox.switcher.adoptCurrentAccount()
+
+        let parked = try sandbox.profile("parked@example.com")
+        do {
+            _ = try await sandbox.switcher.fetchUsage(for: parked, isActive: false)
+            XCTFail("the fetch should have failed")
+        } catch let error as VaultError {
+            XCTAssertEqual(error, .signedOut(parked.id))
+        }
+        XCTAssertTrue(sandbox.api.tokensPresented.isEmpty)
+    }
+
+    func testSavingASignedOutSessionKeepsTheTokensAlreadySaved() throws {
+        let sandbox = try Sandbox()
+        try sandbox.signIn(email: "parked@example.com",
+                           credentials: Sandbox.oauthBlob(access: "good-access", refresh: "good-refresh"))
+        try sandbox.switcher.adoptCurrentAccount()
+
+        // Claude Code empties its tokens on signing out, and switching away then
+        // saves whatever is live.
+        try sandbox.signIn(email: "parked@example.com",
+                           credentials: Sandbox.oauthBlob(access: "", refresh: ""),
+                           usagePercent: 55)
+        try sandbox.switcher.adoptCurrentAccount()
+
+        let parked = try sandbox.profile("parked@example.com")
+        XCTAssertEqual(sandbox.storedCredentials(for: parked.id)?.accessToken, "good-access")
+        XCTAssertEqual(sandbox.switcher.usage(for: parked, isActive: false)?.fiveHour?.percentUsed, 55,
+                       "the settings file is still saved")
+    }
+
+    func testASignedInSessionStillReplacesASignedOutOne() throws {
+        let sandbox = try Sandbox()
+        try sandbox.signIn(email: "parked@example.com",
+                           credentials: Sandbox.oauthBlob(access: "", refresh: ""))
+        try sandbox.switcher.adoptCurrentAccount()
+        try sandbox.signIn(email: "parked@example.com",
+                           credentials: Sandbox.oauthBlob(access: "new-access"))
+        try sandbox.switcher.adoptCurrentAccount()
+
+        let parked = try sandbox.profile("parked@example.com")
+        XCTAssertEqual(sandbox.storedCredentials(for: parked.id)?.accessToken, "new-access")
+    }
 }
 
 /// The OAuth blob on its own: read well enough to use, written back whole.

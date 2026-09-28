@@ -129,4 +129,41 @@ final class UsageTests: XCTestCase {
         XCTAssertEqual(Elapsed.since(now.addingTimeInterval(-3600), now: now), "1h ago")
         XCTAssertEqual(Elapsed.since(now.addingTimeInterval(-86400 * 3), now: now), "3d ago")
     }
+
+    // MARK: - The desktop app's log
+
+    private func history(_ samples: String) -> Data {
+        Data(#"{"version":2,"samples":[\#(samples)]}"#.utf8)
+    }
+
+    func testTakesTheNewestSampleInTheDesktopAppsLog() throws {
+        let usage = try XCTUnwrap(Usage(desktopHistory: history("""
+            {"t":2000000,"org":"o","u":{"fh":42,"sd":11}},
+            {"t":1000000,"org":"o","u":{"fh":32,"sd":10}}
+            """)))
+        XCTAssertEqual(usage.fiveHour?.percentUsed, 42)
+        XCTAssertEqual(usage.sevenDay?.percentUsed, 11)
+        XCTAssertEqual(usage.measuredAt, Date(timeIntervalSince1970: 2000))
+        XCTAssertNil(usage.fiveHour?.resetsAt)
+    }
+
+    func testAnEmptyDesktopLogIsNotAReading() {
+        XCTAssertNil(Usage(desktopHistory: history("")))
+        XCTAssertNil(Usage(desktopHistory: Data("not json".utf8)))
+    }
+
+    func testALaterFigureFromTheSameWindowKeepsItsResetTime() {
+        let resets = Date(timeIntervalSince1970: 10_000)
+        let older = Usage(fiveHour: .init(percentUsed: 20, resetsAt: resets),
+                          sevenDay: .init(percentUsed: 5, resetsAt: Date(timeIntervalSince1970: 1_000)),
+                          measuredAt: Date(timeIntervalSince1970: 500))
+        let logged = Usage(fiveHour: .init(percentUsed: 40, resetsAt: nil),
+                           sevenDay: .init(percentUsed: 6, resetsAt: nil),
+                           measuredAt: Date(timeIntervalSince1970: 5_000))
+
+        let carried = logged.carryingResets(from: older)
+        XCTAssertEqual(carried.fiveHour, .init(percentUsed: 40, resetsAt: resets))
+        XCTAssertNil(carried.sevenDay?.resetsAt,
+                     "that window had turned over before the sample, so its end is unknown")
+    }
 }

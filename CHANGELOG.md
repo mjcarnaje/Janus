@@ -24,9 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and it becomes the launcher's icon in the Dock, Finder and Spotlight.
   Without one, the icon is Claude's own with the account's initial on a
   coloured badge.
+- Usage figures from the Claude desktop app. Each account's desktop app logs
+  its 5-hour and 7-day spend while it is open, and Janus now shows that when
+  it is newer than anything else it has, labelled "measured … in the Claude
+  app". An account whose Claude Code sign-in has lapsed still shows current
+  figures as long as its desktop app has run. The app logs no reset times, so
+  those are carried over from an earlier reading of the same window when
+  there is one.
 
 ### Fixed
 
+- A saved account that Claude Code had signed out no longer loses its
+  sign-in for good. Switching away from it used to save the emptied tokens
+  over the working ones Janus already held; those are now kept, and only the
+  settings file is updated. An account already saved signed out says so on
+  its row ("switch to it, sign in again") instead of repeating "Press
+  Refresh", and a row whose last fetch failed shows why.
 - A signed-in Claude Code account is no longer reported as signed out when a
   `~/.claude/.claude.json` exists. That file is not the live one on a default
   install; it is what Claude Code writes when started with

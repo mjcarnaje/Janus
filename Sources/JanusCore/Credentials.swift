@@ -35,6 +35,22 @@ public struct Credentials: Equatable, Sendable {
         }
     }
 
+    /// True for a blob that is Claude Code's but holds no tokens at all.
+    ///
+    /// What Claude Code leaves behind when it signs an account out: the
+    /// `claudeAiOauth` object stays, with its subscription details, but both
+    /// tokens are emptied. Told apart from a blob that cannot be read because the
+    /// remedy is different, and because saving one of these over a working
+    /// sign-in is the one way a saved account loses its tokens for good.
+    public static func isSignedOut(_ raw: Data) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              let oauth = root[container] as? [String: Any]
+        else { return false }
+        let access = oauth["accessToken"] as? String ?? ""
+        let refresh = oauth["refreshToken"] as? String ?? ""
+        return access.isEmpty && refresh.isEmpty
+    }
+
     /// Whether the access token can still be presented.
     ///
     /// A token about to expire counts as expired. The alternative is a request
