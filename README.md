@@ -203,6 +203,49 @@ Things specific to Codex:
   in the keychain (`cli_auth_credentials_store = "keychain"`), there is no
   `auth.json` to swap, and the tab will say nobody is signed in.
 
+## The Claude desktop app
+
+The desktop app has its own sign-in, separate from Claude Code's, so the Claude
+tab cannot switch it the way it switches the command line tool. It can do
+something better: run several accounts at once.
+
+Every saved Claude account gets an app of its own in
+`~/Applications/Claude Accounts/`, called something like `Claude – ramit`.
+Opening it starts Claude.app with `--user-data-dir` pointed at that account's
+own directory under `~/Library/Application Support/Janus/Desktop/profiles/`,
+so each account keeps its own sign-in, chats and `claude_desktop_config.json`.
+They run side by side, and opening a launcher whose Claude is already running
+brings that window forward rather than starting a second copy.
+
+- **Refresh keeps them in step with the list.** It makes a launcher for an
+  account that has none, rebuilds one whose account, logo or Claude version
+  changed, and moves the launcher of a removed account to the Trash. A launcher
+  that is already current is not touched, so the Dock does not redraw it for
+  nothing.
+- **Each account can have its own logo.** Choose one from the account's desktop
+  menu, the window icon on its row. Without one, the icon is Claude's with the
+  account's initial on a coloured badge.
+- **Claude.app is never modified.** No copy, no re-signing, so its updater keeps
+  working and every launcher follows it. Copying and re-signing Claude is the
+  other common recipe, and it breaks passkeys and Microsoft sign-in.
+- **Removing an account keeps its desktop data.** Only the launcher goes. Save
+  the account again and the same launcher comes back, still signed in.
+
+Two things to know:
+
+- **Sign in with the other Claude windows closed.** Sign-in finishes through a
+  `claude://` link, and macOS gives that link to whichever copy of Claude it
+  picks. Once each account is signed in, they can all be open together.
+- **The running window has the ordinary Claude icon in the Dock.** The launcher
+  carries the account's logo; the copy of Claude it starts is the same
+  Claude.app as always. Pin the launcher, not the running Claude, to keep one
+  click per account.
+
+Claude Code sessions started from the desktop app's Code tab still share
+`~/.claude`. Janus does not set `CLAUDE_CONFIG_DIR` for them, because Claude Code
+files its keychain entry under that path and changing it would sign the command
+line tool out.
+
 ## Clearing caches
 
 The Storage tab measures a fixed list of cache directories: package managers,

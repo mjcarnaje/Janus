@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A Claude desktop app for every saved Claude account. Each gets a small
+  launcher in `~/Applications/Claude Accounts/` that opens Claude.app against
+  that account's own data directory (`--user-data-dir`), so two or more
+  accounts can be open side by side, each keeping its own sign-in, chats and
+  MCP settings. Claude.app itself is never copied, modified or re-signed, so
+  it keeps its updater, its passkeys and its Microsoft sign-in. Pressing
+  Refresh creates launchers for new accounts, rebuilds ones whose account,
+  logo or Claude version changed, and moves the ones whose account was
+  removed to the Trash. The account's desktop data is kept, so saving it
+  again brings it back still signed in. A launcher whose Claude is already
+  running brings that window forward instead of opening a second copy.
+- A logo for each account. Choose an image from the account's desktop menu,
+  and it becomes the launcher's icon in the Dock, Finder and Spotlight.
+  Without one, the icon is Claude's own with the account's initial on a
+  coloured badge.
+
 ## [1.2.0] - 2026-09-28
 
 ### Added

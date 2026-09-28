@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 import JanusCore
 
 /// One account's figures and where they came from, which is what decides how the
@@ -35,6 +36,14 @@ final class AccountsModel: ObservableObject {
     @Published private(set) var outcome: Outcome?
     @Published private(set) var failure: String?
 
+    /// The Claude desktop launcher each account has, and what it looks like.
+    @Published private(set) var desktopApps: [UUID: DesktopApp] = [:]
+
+    /// What the last launcher sync did, or why it could not.
+    @Published private(set) var desktopStatus: String?
+    @Published private(set) var desktopStatusIsError = false
+    @Published private(set) var isSyncingDesktop = false
+
     /// The moment every countdown and every "has this window reset yet" is
     /// measured against.
     ///
@@ -49,10 +58,12 @@ final class AccountsModel: ObservableObject {
     private var fetched: [UUID: Usage] = [:]
 
     private let switcher: Switcher
+    let launchers: DesktopLaunchers
     private var ticker: Timer?
 
-    init(switcher: Switcher = Switcher()) {
+    init(switcher: Switcher = Switcher(), launchers: DesktopLaunchers = DesktopLaunchers()) {
         self.switcher = switcher
+        self.launchers = launchers
         reload()
         startTicking()
     }
@@ -154,6 +165,7 @@ final class AccountsModel: ObservableObject {
 
         self.restorable = restorable
         self.readings = readings
+        reloadDesktopApps()
 
         // An account that has been removed keeps nothing behind it.
         let known = Set(roster.profiles.map(\.id))
@@ -189,10 +201,15 @@ final class AccountsModel: ObservableObject {
         case aWindowReset
     }
 
-    /// The Refresh button: re-read the disk, then go and ask for the real numbers.
+    /// The Refresh button: re-read the disk, bring the desktop launchers in line
+    /// with the roster, then go and ask for the real numbers.
     func refresh() {
         guard !isWorking else { return }
         reload()
+
+        // Before the empty-roster check below, so removing the last account
+        // still removes its launcher.
+        syncDesktopApps()
 
         // With nothing saved there is nobody to ask on behalf of, and a button
         // that does nothing at all reads as a button that is broken.
@@ -299,7 +316,7 @@ final class AccountsModel: ObservableObject {
     // MARK: - Acting
 
     func addCurrentAccount() {
-        perform { try $0.adoptCurrentAccount() }
+        perform(thenSyncDesktop: true) { try $0.adoptCurrentAccount() }
     }
 
     func switchTo(_ profile: Profile) {
@@ -311,7 +328,7 @@ final class AccountsModel: ObservableObject {
     }
 
     func remove(_ profile: Profile) {
-        perform { try $0.remove(profile.id) }
+        perform(thenSyncDesktop: true) { try $0.remove(profile.id) }
     }
 
     func tidy() {
@@ -334,7 +351,8 @@ final class AccountsModel: ObservableObject {
     ///
     /// Switching can stop to ask macOS for keychain permission, and that wait
     /// belongs anywhere except the thread drawing the window.
-    private func perform(_ work: @escaping @Sendable (Switcher) throws -> Outcome?) {
+    private func perform(thenSyncDesktop: Bool = false,
+                         _ work: @escaping @Sendable (Switcher) throws -> Outcome?) {
         guard !isWorking else { return }
         isWorking = true
         outcome = nil
@@ -353,6 +371,7 @@ final class AccountsModel: ObservableObject {
             defer {
                 isWorking = false
                 reload()
+                if thenSyncDesktop { syncDesktopApps() }
             }
 
             let result = await Task.detached { () -> Result<Outcome?, Error> in
@@ -364,5 +383,118 @@ final class AccountsModel: ObservableObject {
             case .failure(let error): failure = error.localizedDescription
             }
         }
+    }
+}
+
+// MARK: - The Claude desktop app
+
+/// One account's launcher, as the row needs it.
+struct DesktopApp: Equatable {
+    let url: URL
+    let icon: NSImage?
+    let isRunning: Bool
+    let hasCustomLogo: Bool
+}
+
+extension AccountsModel {
+
+    func desktopApp(for profile: Profile) -> DesktopApp? {
+        desktopApps[profile.id]
+    }
+
+    var isClaudeDesktopInstalled: Bool { launchers.isClaudeInstalled }
+
+    /// Reads what is in the launcher folder. Touches files and the process
+    /// list only, so it is cheap enough for every tick.
+    func reloadDesktopApps() {
+        var apps: [UUID: DesktopApp] = [:]
+        for launcher in launchers.installed() {
+            let iconURL = launcher.url.appendingPathComponent("Contents/Resources/AppIcon.icns")
+            apps[launcher.id] = DesktopApp(url: launcher.url,
+                                           icon: NSImage(contentsOf: iconURL),
+                                           isRunning: launchers.isRunning(launcher.id),
+                                           hasCustomLogo: launchers.hasCustomLogo(launcher.id))
+        }
+        desktopApps = apps
+    }
+
+    /// Creates, updates and deletes launchers until there is exactly one, current,
+    /// for every saved account. Off the main thread: a changed launcher is drawn,
+    /// packed by `iconutil` and signed by `codesign`.
+    func syncDesktopApps() {
+        guard !isSyncingDesktop else { return }
+        guard launchers.isClaudeInstalled else {
+            desktopStatus = nil
+            return
+        }
+        isSyncingDesktop = true
+        let launchers = launchers
+        let roster = roster
+
+        Task {
+            let result = await Task.detached { () -> Result<DesktopLaunchers.Report, Error> in
+                Result { try launchers.sync(roster) }
+            }.value
+
+            isSyncingDesktop = false
+            switch result {
+            case .success(let report):
+                desktopStatus = report.summary
+                desktopStatusIsError = false
+            case .failure(let error):
+                desktopStatus = error.localizedDescription
+                desktopStatusIsError = true
+            }
+            reloadDesktopApps()
+        }
+    }
+
+    /// Opens Claude as this account, making its launcher first if need be.
+    func openDesktop(_ profile: Profile) {
+        if let app = desktopApps[profile.id] {
+            NSWorkspace.shared.open(app.url)
+            return
+        }
+        let launchers = launchers
+        let roster = roster
+        Task {
+            let result = await Task.detached { Result { try launchers.sync(roster) } }.value
+            reloadDesktopApps()
+            if case .failure(let error) = result {
+                desktopStatus = error.localizedDescription
+                desktopStatusIsError = true
+            } else if let app = desktopApps[profile.id] {
+                NSWorkspace.shared.open(app.url)
+            }
+        }
+    }
+
+    func revealDesktop(_ profile: Profile) {
+        guard let app = desktopApps[profile.id] else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([app.url])
+    }
+
+    /// Asks for an image and makes it the account's launcher icon.
+    func chooseLogo(for profile: Profile) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a logo for \(profile.email)"
+        panel.prompt = "Use as Logo"
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try launchers.setLogo(from: url, for: profile.id)
+            syncDesktopApps()
+        } catch {
+            desktopStatus = error.localizedDescription
+            desktopStatusIsError = true
+        }
+    }
+
+    func useDefaultLogo(for profile: Profile) {
+        launchers.removeLogo(for: profile.id)
+        syncDesktopApps()
     }
 }

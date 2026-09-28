@@ -42,7 +42,9 @@ struct AccountsView: View {
                                 onMoveUp: { model.move(profile, by: -1) },
                                 onMoveDown: { model.move(profile, by: 1) },
                                 onSwitch: { model.switchTo(profile) },
-                                onRemove: { pendingRemoval = profile }
+                                onRemove: { pendingRemoval = profile },
+                                desktop: model.isClaudeDesktopInstalled
+                                    ? DesktopControls(model: model, profile: profile) : nil
                             )
                             Divider()
                         }
@@ -112,15 +114,24 @@ struct AccountsView: View {
                 .buttonStyle(.borderless)
                 .popover(isPresented: $showingHelp, arrowEdge: .top) { help }
 
-                if model.isWorking { ProgressView().controlSize(.small) }
+                if model.isWorking || model.isSyncingDesktop { ProgressView().controlSize(.small) }
 
                 Spacer(minLength: 8)
 
                 Button("Refresh") { model.refresh() }
-                    .disabled(model.isWorking)
+                    .disabled(model.isWorking || model.isSyncingDesktop)
+                    .help("Fetch every account's figures and rebuild the Claude desktop apps")
             }
 
             Message(outcome: model.outcome, failure: model.failure)
+
+            if let status = model.desktopStatus {
+                Label(status, systemImage: model.desktopStatusIsError
+                      ? "exclamationmark.triangle.fill" : "macwindow")
+                    .font(.caption)
+                    .foregroundStyle(model.desktopStatusIsError ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(16)
     }
@@ -135,6 +146,23 @@ struct AccountsView: View {
                  To add a second one: sign out of Claude Code, sign in as the other \
                  account, then come back and press Save current account. From then on \
                  both are one click apart.
+                 """)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider().padding(.vertical, 2)
+
+            Text("The Claude desktop app").font(.headline)
+            Text("""
+                 Every saved account gets its own app in ~/Applications/Claude \
+                 Accounts, which opens Claude signed in as that account, beside \
+                 any other. Refresh makes, updates and deletes them to match this \
+                 list. Choose a logo from an account's desktop menu to set its icon.
+
+                 The first time you open one, sign in with every other Claude \
+                 window quit. Sign-in comes back through a link, and macOS hands \
+                 that link to whichever Claude it likes.
                  """)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -225,6 +253,9 @@ struct AccountRow: View {
     /// What to say in place of figures, for an account that has none yet.
     var unmeasured = "No usage recorded yet"
 
+    /// The account's Claude desktop app. Claude accounts only.
+    var desktop: DesktopControls?
+
     var body: some View {
         HStack(spacing: 12) {
             VStack(spacing: 1) {
@@ -246,6 +277,14 @@ struct AccountRow: View {
 
             Image(systemName: isActive ? "largecircle.fill.circle" : "circle")
                 .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+
+            if let icon = desktop?.app?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 30, height: 30)
+                    .help("This account's Claude desktop app")
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -276,6 +315,8 @@ struct AccountRow: View {
 
             Spacer(minLength: 8)
 
+            if let desktop { desktop.menu(isBusy: isBusy) }
+
             if isActive {
                 Text("In use")
                     .font(.callout)
@@ -294,5 +335,39 @@ struct AccountRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
+    }
+}
+
+/// The desktop app menu on a Claude account's row.
+@MainActor
+struct DesktopControls {
+    let model: AccountsModel
+    let profile: Profile
+
+    var app: DesktopApp? { model.desktopApp(for: profile) }
+
+    @MainActor
+    func menu(isBusy: Bool) -> some View {
+        Menu {
+            Button(app?.isRunning == true ? "Show Claude for This Account" : "Open Claude as This Account") {
+                model.openDesktop(profile)
+            }
+            Divider()
+            Button("Choose Logo…") { model.chooseLogo(for: profile) }
+            Button("Use Default Logo") { model.useDefaultLogo(for: profile) }
+                .disabled(app?.hasCustomLogo != true)
+            Divider()
+            Button("Show in Finder") { model.revealDesktop(profile) }
+                .disabled(app == nil)
+        } label: {
+            Image(systemName: app?.isRunning == true ? "macwindow.badge.plus" : "macwindow")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(isBusy)
+        .help(app?.isRunning == true
+              ? "Claude desktop is open as this account"
+              : "Claude desktop app for this account")
     }
 }

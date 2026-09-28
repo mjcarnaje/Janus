@@ -42,6 +42,8 @@ jobs:
         run: |
           lipo -info Janus.app/Contents/MacOS/Janus | tee /dev/stderr \
             | grep -q 'x86_64 arm64\|arm64 x86_64'
+          lipo -info Janus.app/Contents/MacOS/JanusLauncher | tee /dev/stderr \
+            | grep -q 'x86_64 arm64\|arm64 x86_64'
 
       - name: Check the signature
         run: codesign --verify --strict --verbose=2 Janus.app

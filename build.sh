@@ -23,22 +23,31 @@ if [[ "${UNIVERSAL:-0}" == "1" ]]; then
     # swiftpm's --arch, because that route needs a full Xcode install and this
     # one does not.
     SLICES=()
+    LAUNCHER_SLICES=()
     for TRIPLE in arm64-apple-macosx13.0 x86_64-apple-macosx13.0; do
         echo "    ${TRIPLE}"
         swift build -c release --triple "${TRIPLE}"
-        SLICES+=("$(swift build -c release --triple "${TRIPLE}" --show-bin-path)/${APP_NAME}")
+        BIN_PATH="$(swift build -c release --triple "${TRIPLE}" --show-bin-path)"
+        SLICES+=("${BIN_PATH}/${APP_NAME}")
+        LAUNCHER_SLICES+=("${BIN_PATH}/JanusLauncher")
     done
-    BINARY="$(mktemp -d)/${APP_NAME}"
+    OUT="$(mktemp -d)"
+    BINARY="${OUT}/${APP_NAME}"
+    LAUNCHER="${OUT}/JanusLauncher"
     lipo -create -output "${BINARY}" "${SLICES[@]}"
+    lipo -create -output "${LAUNCHER}" "${LAUNCHER_SLICES[@]}"
 else
     swift build -c release
     BINARY="$(swift build -c release --show-bin-path)/${APP_NAME}"
+    LAUNCHER="$(swift build -c release --show-bin-path)/JanusLauncher"
 fi
 
 echo "==> Assembling ${APP}"
 rm -rf "${APP}"
 mkdir -p "${CONTENTS}/MacOS" "${CONTENTS}/Resources"
 cp "${BINARY}" "${CONTENTS}/MacOS/${APP_NAME}"
+# Copied into each Claude desktop launcher Janus makes, one per saved account.
+cp "${LAUNCHER}" "${CONTENTS}/MacOS/JanusLauncher"
 
 swift scripts/make-icon.swift "${CONTENTS}/Resources/AppIcon.icns" > /dev/null
 
