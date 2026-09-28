@@ -20,14 +20,16 @@ public struct SystemIconRenderer: LauncherIconRenderer {
 
     public init() {}
 
+    /// Kept at its own proportions, at most 1024 pixels on its longest side, so
+    /// the icon can decide later whether to fill with it or fit it.
     public func normalizedLogo(_ data: Data) -> Data? {
         guard let image = NSImage(data: data), image.isValid,
-              image.size.width > 0, image.size.height > 0,
-              let bitmap = render(pixels: 1024, { rect in
-                  image.draw(in: Self.aspectFit(image.size, in: rect))
-              })
+              image.size.width > 0, image.size.height > 0
         else { return nil }
-        return bitmap
+        let scale = 1024 / max(image.size.width, image.size.height)
+        let width = max(1, Int((image.size.width * scale).rounded()))
+        let height = max(1, Int((image.size.height * scale).rounded()))
+        return render(width: width, height: height) { rect in image.draw(in: rect) }
     }
 
     public func icns(logo: Data?, claudeApp: URL, initial: String, tint: Int) throws -> Data {
@@ -81,20 +83,33 @@ public struct SystemIconRenderer: LauncherIconRenderer {
         return rect.insetBy(dx: margin, dy: margin)
     }
 
-    /// The account's logo filling the icon shape, over white so a transparent
-    /// logo still reads, with a small Claude mark in the corner so the launcher
-    /// is recognisably Claude's.
+    /// The account's logo in the icon shape, over white so a transparent logo
+    /// still reads, with a small Claude mark in the corner so the launcher is
+    /// recognisably Claude's.
+    ///
+    /// A roughly square logo fills the shape. A wordmark or banner is fitted
+    /// inside it instead, since cropping it to a square would cut its ends off.
     static func drawLogo(_ logo: NSImage, claudeBadge: NSImage, in rect: NSRect) {
         let plate = plate(in: rect)
         let corner = plate.width * 0.2237
+        let shape = NSBezierPath(roundedRect: plate, xRadius: corner, yRadius: corner)
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: plate, xRadius: corner, yRadius: corner).addClip()
+        shape.addClip()
         NSColor.white.setFill()
         plate.fill()
-        logo.draw(in: aspectFill(logo.size, in: plate), from: .zero, operation: .sourceOver,
+        let ratio = logo.size.width / max(logo.size.height, 1)
+        let frame = (0.8...1.25).contains(ratio)
+            ? aspectFill(logo.size, in: plate)
+            : aspectFit(logo.size, in: plate.insetBy(dx: plate.width * 0.1, dy: plate.width * 0.1))
+        logo.draw(in: frame, from: .zero, operation: .sourceOver,
                   fraction: 1, respectFlipped: true,
                   hints: [.interpolation: NSImageInterpolation.high.rawValue])
         NSGraphicsContext.restoreGraphicsState()
+
+        // A hairline edge, or a white icon disappears against a light Dock.
+        NSColor.black.withAlphaComponent(0.12).setStroke()
+        shape.lineWidth = max(0.5, rect.width * 0.004)
+        shape.stroke()
 
         let side = rect.width * 0.36
         let badge = NSRect(x: rect.maxX - side - rect.width * 0.02, y: rect.minY + rect.width * 0.02,
@@ -142,8 +157,12 @@ public struct SystemIconRenderer: LauncherIconRenderer {
 
     /// A square PNG of the given size, drawn by the closure.
     private func render(pixels: Int, _ draw: (NSRect) -> Void) -> Data? {
+        render(width: pixels, height: pixels, draw)
+    }
+
+    private func render(width: Int, height: Int, _ draw: (NSRect) -> Void) -> Data? {
         guard let canvas = NSBitmapImageRep(bitmapDataPlanes: nil,
-                                            pixelsWide: pixels, pixelsHigh: pixels,
+                                            pixelsWide: width, pixelsHigh: height,
                                             bitsPerSample: 8, samplesPerPixel: 4,
                                             hasAlpha: true, isPlanar: false,
                                             colorSpaceName: .deviceRGB,
@@ -154,7 +173,7 @@ public struct SystemIconRenderer: LauncherIconRenderer {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
         context.imageInterpolation = .high
-        draw(NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        draw(NSRect(x: 0, y: 0, width: width, height: height))
         NSGraphicsContext.restoreGraphicsState()
         return canvas.representation(using: .png, properties: [:])
     }

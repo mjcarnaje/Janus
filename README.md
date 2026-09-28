@@ -240,6 +240,9 @@ Two things to know:
   carries the account's logo; the copy of Claude it starts is the same
   Claude.app as always. Pin the launcher, not the running Claude, to keep one
   click per account.
+- **A closed window stays closed.** Claude keeps running after ⌘W, and opening
+  its launcher brings that copy forward with no window to show. Click its Dock
+  icon, or press ⌘N, to get the window back.
 
 Claude Code sessions started from the desktop app's Code tab still share
 `~/.claude`. Janus does not set `CLAUDE_CONFIG_DIR` for them, because Claude Code
