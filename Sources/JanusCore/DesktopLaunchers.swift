@@ -302,6 +302,10 @@ public final class DesktopLaunchers: @unchecked Sendable {
         ]
     }
 
+    /// Changed whenever launcher icons are drawn differently, so Refresh redraws
+    /// the ones an older Janus made instead of reporting them up to date.
+    static let iconStyle = "icons-v2"
+
     /// Everything that ends up in a launcher, hashed. The Claude version is part
     /// of it because the default icon is drawn from Claude's own.
     static func fingerprint(info: [String: Any], executable: Data,
@@ -312,7 +316,8 @@ public final class DesktopLaunchers: @unchecked Sendable {
             hasher.update(data: plist)
         }
         hasher.update(data: executable)
-        hasher.update(data: logo ?? Data("default-icon-v1".utf8))
+        hasher.update(data: Data(iconStyle.utf8))
+        hasher.update(data: logo ?? Data("default-icon".utf8))
         hasher.update(data: Data(claudeVersion.utf8))
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

@@ -309,6 +309,65 @@ final class DesktopLauncherIntegrationTests: XCTestCase {
             XCTAssertEqual(image.size.width, 512, accuracy: 1)
         }
     }
+
+    /// macOS 26 shrinks an icon onto a grey tile when its outline is not the
+    /// standard rounded square, and a badge sticking out of a corner was enough.
+    func testIconsStayInsideTheRoundedSquare() throws {
+        let claude = DesktopLaunchers.defaultClaudeApp
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: claude.path), "Claude is not installed")
+
+        let renderer = SystemIconRenderer()
+        let banner = try XCTUnwrap(renderer.normalizedLogo(
+            try XCTUnwrap(NSImage(size: NSSize(width: 400, height: 100), flipped: false) { rect in
+                NSColor.systemPurple.setFill(); rect.fill(); return true
+            }.tiffRepresentation)))
+
+        // Without a logo the badge sits on Claude's icon, so it must not reach
+        // past the edge of Claude's own.
+        let plain = try renderer.icns(logo: nil, claudeApp: claude, initial: "R", tint: 0)
+        assertBounds(try opaqueBounds(of: try XCTUnwrap(NSImage(data: plain))),
+                     equal: try opaqueBounds(of: NSWorkspace.shared.icon(forFile: claude.path)))
+
+        let withLogo = try renderer.icns(logo: banner, claudeApp: claude, initial: "R", tint: 0)
+        assertBounds(try opaqueBounds(of: try XCTUnwrap(NSImage(data: withLogo))),
+                     equal: SystemIconRenderer.plate(in: NSRect(x: 0, y: 0, width: 1024, height: 1024)))
+    }
+
+    /// The rectangle round every pixel that is at least half opaque, with the
+    /// image drawn at 1024 pixels.
+    private func opaqueBounds(of image: NSImage) throws -> NSRect {
+        let side = 1024
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil,
+                                                    pixelsWide: side, pixelsHigh: side,
+                                                    bitsPerSample: 8, samplesPerPixel: 4,
+                                                    hasAlpha: true, isPlanar: false,
+                                                    colorSpaceName: .deviceRGB,
+                                                    bytesPerRow: 0, bitsPerPixel: 0))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+        NSGraphicsContext.restoreGraphicsState()
+
+        let pixels = try XCTUnwrap(bitmap.bitmapData)
+        var minX = side, minY = side, maxX = -1, maxY = -1
+        for y in 0..<side {
+            for x in 0..<side where pixels[y * bitmap.bytesPerRow + x * 4 + 3] >= 128 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        return NSRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
+    /// Equal to within a couple of pixels, which is what antialiasing moves an edge.
+    private func assertBounds(_ actual: NSRect, equal expected: NSRect,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        for (edge, expectedEdge) in [(actual.minX, expected.minX), (actual.minY, expected.minY),
+                                     (actual.maxX, expected.maxX), (actual.maxY, expected.maxY)] {
+            XCTAssertEqual(edge, expectedEdge, accuracy: 2,
+                           "Drawn over \(actual), expected \(expected)", file: file, line: line)
+        }
+    }
 }
 
 final class ProcessArgumentsTests: XCTestCase {

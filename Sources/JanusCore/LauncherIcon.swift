@@ -77,10 +77,27 @@ public struct SystemIconRenderer: LauncherIconRenderer {
 
     // MARK: - Drawing
 
-    /// The rounded square macOS icons sit in, inside the standard margin.
+    /// The rounded square macOS icons sit in: Apple's template puts an 824-pixel
+    /// square in a 1024-pixel canvas, which is also where Claude's own icon is.
+    ///
+    /// Nothing is drawn outside it. macOS 26 shows an icon whose outline is not
+    /// this shape, a badge sticking out of a corner included, shrunk onto a grey
+    /// tile.
     static func plate(in rect: NSRect) -> NSRect {
-        let margin = rect.width * 0.085
+        let margin = rect.width * 100 / 1024
         return rect.insetBy(dx: margin, dy: margin)
+    }
+
+    static func outline(of plate: NSRect) -> NSBezierPath {
+        let corner = plate.width * 0.2237
+        return NSBezierPath(roundedRect: plate, xRadius: corner, yRadius: corner)
+    }
+
+    /// A badge's frame in the plate's bottom-right corner, far enough in to clear
+    /// the rounded corner rather than poke out of it.
+    static func badge(side: CGFloat, in plate: NSRect) -> NSRect {
+        let inset = plate.width * 0.06
+        return NSRect(x: plate.maxX - side - inset, y: plate.minY + inset, width: side, height: side)
     }
 
     /// The account's logo in the icon shape, over white so a transparent logo
@@ -91,8 +108,7 @@ public struct SystemIconRenderer: LauncherIconRenderer {
     /// inside it instead, since cropping it to a square would cut its ends off.
     static func drawLogo(_ logo: NSImage, claudeBadge: NSImage, in rect: NSRect) {
         let plate = plate(in: rect)
-        let corner = plate.width * 0.2237
-        let shape = NSBezierPath(roundedRect: plate, xRadius: corner, yRadius: corner)
+        let shape = outline(of: plate)
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
         NSColor.white.setFill()
@@ -104,26 +120,28 @@ public struct SystemIconRenderer: LauncherIconRenderer {
         logo.draw(in: frame, from: .zero, operation: .sourceOver,
                   fraction: 1, respectFlipped: true,
                   hints: [.interpolation: NSImageInterpolation.high.rawValue])
-        NSGraphicsContext.restoreGraphicsState()
 
         // A hairline edge, or a white icon disappears against a light Dock.
+        // Stroked inside the clip, which keeps only the inner half of the line.
         NSColor.black.withAlphaComponent(0.12).setStroke()
-        shape.lineWidth = max(0.5, rect.width * 0.004)
+        shape.lineWidth = max(0.5, rect.width * 0.004) * 2
         shape.stroke()
+        NSGraphicsContext.restoreGraphicsState()
 
-        let side = rect.width * 0.36
-        let badge = NSRect(x: rect.maxX - side - rect.width * 0.02, y: rect.minY + rect.width * 0.02,
-                           width: side, height: side)
-        claudeBadge.draw(in: badge)
+        // Claude's icon has the same empty margin round it as any other, so it
+        // is drawn that much larger for its visible part to fill the badge.
+        let mark = badge(side: plate.width * 0.3, in: plate)
+        let margin = mark.width * 100 / 824
+        claudeBadge.draw(in: mark.insetBy(dx: -margin, dy: -margin))
     }
 
-    /// Claude's own icon with the account's initial in a coloured disc.
+    /// Claude's own icon with the account's initial in a coloured disc, the disc
+    /// kept inside Claude's rounded square.
     static func drawDefault(_ claude: NSImage, initial: String, color: NSColor, in rect: NSRect) {
         claude.draw(in: rect)
 
-        let side = rect.width * 0.46
-        let disc = NSRect(x: rect.maxX - side - rect.width * 0.03, y: rect.minY + rect.width * 0.03,
-                          width: side, height: side)
+        let plate = plate(in: rect)
+        let disc = badge(side: plate.width * 0.44, in: plate)
         let ring = NSBezierPath(ovalIn: disc)
         color.setFill()
         ring.fill()
@@ -131,7 +149,7 @@ public struct SystemIconRenderer: LauncherIconRenderer {
         ring.lineWidth = max(1, rect.width * 0.025)
         ring.stroke()
 
-        let font = NSFont.systemFont(ofSize: side * 0.58, weight: .bold)
+        let font = NSFont.systemFont(ofSize: disc.width * 0.58, weight: .bold)
         let text = NSAttributedString(string: initial, attributes: [
             .font: font,
             .foregroundColor: NSColor.white
