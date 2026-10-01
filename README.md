@@ -13,13 +13,18 @@ hold onto.
 
 One click moves the live session, and the account it displaces is saved first.
 
-It does three things, one tab each:
+It lives in the menu bar. Click it and a small panel opens: who is signed in to
+Claude Code and to Codex, how much of each limit they have spent, and a grid of
+tiles for everything worth doing in a click. Anything that needs more room is in
+a window behind the panel's **Manage** tile.
+
+It does three things:
 
 - **Switches Claude Code accounts.** Signing in as another account normally means
   signing out first and typing the whole thing again. Janus saves each
   account's session and puts it back on demand, so the second account is one click
   away instead of one login away.
-- **Switches Codex accounts.** The same, for OpenAI's Codex, in a tab of its own.
+- **Switches Codex accounts.** The same, for OpenAI's Codex, with tiles of its own.
   See [Codex](#codex).
 - **Clears developer caches.** A list of directories that are safe to delete,
   measured and shown with what each one costs to lose. Everything goes to the
@@ -75,12 +80,13 @@ already. Press **Save current account** and it is captured.
 
 For the second: sign out of Claude Code, sign in as the other account, come back,
 and press **Save current account** again. From then on both are in the list and
-switching between them is one click, or `⌘S` from the menu bar.
+switching between them is one click, or `⌘S` with the panel open.
 
 ![The Janus window, with both accounts and how much of each limit they have spent](demo/screenshot.png)
 
-The menu bar item shows which account is live. The window shows both accounts
-with how much of their five-hour and weekly limits each has spent. That is the
+The menu bar item shows which account is live, and its panel shows that
+account's five-hour and weekly limits. The window, under **Manage**, shows every
+account with how much of each limit it has spent. That is the
 number to look at when the decision you are making is *which account has room
 left*.
 
@@ -308,7 +314,7 @@ screen:
 | Target | What is in it |
 | --- | --- |
 | `JanusCore` | Sessions, storage, the switch itself, the cache catalogue and its safety rules. No SwiftUI. |
-| `Janus` | The SwiftUI window, the menu bar item, and the models behind them. |
+| `Janus` | The menu bar panel, the window behind it, and the models behind both. |
 | `JanusCoreTests` | Everything in `JanusCore`, against a temporary home directory and an in-memory keychain. |
 
 `swift build` needs only the Command Line Tools; `swift test` needs XCTest, which

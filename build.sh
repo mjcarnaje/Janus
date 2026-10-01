@@ -69,7 +69,7 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
     <!-- A regular app, not a menu-bar-only one: it keeps a Dock icon and opens
          its window on launch. A lone glyph in a crowded menu bar is too easy to
          lose, so the menu bar item is the shortcut rather than the whole app. -->
-    <key>LSUIElement</key><false/>
+    <key>LSUIElement</key><true/>
 </dict>
 </plist>
 PLIST

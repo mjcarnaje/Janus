@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those are carried over from an earlier reading of the same window when
   there is one.
 
+### Changed
+
+- Janus is now a menu bar panel rather than a window with a menu attached.
+  Clicking its menu bar item opens a popover showing the Claude Code and Codex
+  accounts in use, with their limits, above a grid of tiles: switch to the
+  next account (`⌘S` for Claude Code), pick any account, clear caches,
+  refresh (`⌘R`), manage (`⌘,`) and quit (`⌘Q`). The full window is still
+  there, behind Manage, for reordering, removing, desktop logos and choosing
+  which caches go. Janus no longer has a Dock icon except while that window is
+  open.
+
 ### Fixed
 
 - A saved account that Claude Code had signed out no longer loses its

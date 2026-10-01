@@ -5,42 +5,22 @@ import JanusCore
 @main
 struct JanusApp: App {
 
-    @StateObject private var accounts = AccountsModel()
-    @StateObject private var codex = CodexModel()
-    @StateObject private var caches = CachesModel()
+    // The widget in the menu bar is the main surface, and the window sits behind
+    // its Manage tile. Both are AppKit's, so they live in the controller.
+    @NSApplicationDelegateAdaptor(PanelController.self) private var panel
 
     var body: some Scene {
-        // The window is the main surface. Everything the app does is visible in
-        // it at once, which a menu bar dropdown is a poor place to discover.
-        Window("Janus", id: WindowID.main) {
-            MainWindow(accounts: accounts, codex: codex, caches: caches)
-        }
-        .defaultSize(width: 620, height: 600)
-        .commands {
-            CommandGroup(replacing: .newItem) {}
-            CommandGroup(replacing: .appInfo) {
-                Button("About Janus") { AboutPanel.show() }
+        // SwiftUI needs a scene. This one never opens; it is here so the app
+        // keeps SwiftUI's main menu, which the window's shortcuts go through.
+        Settings { EmptyView() }
+            .commands {
+                CommandGroup(replacing: .appSettings) {}
+                CommandGroup(replacing: .newItem) {}
+                CommandGroup(replacing: .appInfo) {
+                    Button("About Janus") { AboutPanel.show() }
+                }
             }
-        }
-
-        // The menu bar item is the shortcut: switch accounts without opening
-        // anything, and see which account is live at a glance. The title stays
-        // the Claude Code account, which is the one that has always been there.
-        MenuBarExtra {
-            MenuBarContent(accounts: accounts, codex: codex, caches: caches)
-        } label: {
-            Label(menuBarTitle, systemImage: "arrow.left.arrow.right.circle")
-        }
-        .menuBarExtraStyle(.menu)
     }
-
-    private var menuBarTitle: String {
-        accounts.active?.shortName ?? "Janus"
-    }
-}
-
-enum WindowID {
-    static let main = "janus.main"
 }
 
 /// The standard About panel, filled in from the bundle so the version shown is

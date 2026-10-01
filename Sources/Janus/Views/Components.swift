@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import JanusCore
 
@@ -202,5 +203,206 @@ struct UsagePanel: View {
     private var advice: String? {
         guard !usage.resetWindows(by: now).isEmpty else { return nil }
         return "That window has started over. Press Refresh to fetch the new figure."
+    }
+}
+
+// MARK: - The widget's tiles
+
+/// One square-cornered button in the widget's grid: a symbol, a title, and on the
+/// right whatever helps decide whether to press it — the shortcut, a size, or a
+/// chevron for a tile that opens a menu.
+struct Tile: View {
+
+    enum Trailing {
+        case none
+        case shortcut(Character)
+        case text(String)
+        case chevron
+    }
+
+    let title: String
+    let symbol: String
+    var trailing: Trailing = .none
+    var isBusy = false
+    let action: () -> Void
+
+    init(_ title: String, symbol: String, trailing: Trailing = .none,
+         isBusy: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.symbol = symbol
+        self.trailing = trailing
+        self.isBusy = isBusy
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Group {
+                    if isBusy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: symbol)
+                    }
+                }
+                .font(.system(size: 15))
+                .frame(width: 20)
+
+                Text(title)
+                    .font(.system(size: 13.5))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                Spacer(minLength: 4)
+
+                trailingView
+            }
+        }
+        .buttonStyle(TileStyle())
+        .modifier(Shortcut(trailing: trailing))
+    }
+
+    @ViewBuilder
+    private var trailingView: some View {
+        switch trailing {
+        case .none:
+            EmptyView()
+        case .shortcut(let key):
+            Text("⌘\(String(key).uppercased())")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+        case .text(let text):
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.secondary)
+        case .chevron:
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The shortcut shown is the shortcut bound, so the two can never disagree.
+    private struct Shortcut: ViewModifier {
+        let trailing: Trailing
+
+        func body(content: Content) -> some View {
+            if case .shortcut(let key) = trailing {
+                content.keyboardShortcut(KeyEquivalent(key), modifiers: .command)
+            } else {
+                content
+            }
+        }
+    }
+}
+
+/// A tile that opens a menu where it was clicked.
+///
+/// The menu is AppKit's rather than SwiftUI's `Menu`, because on macOS a `Menu`
+/// draws its label as a pop-up button and ignores any background given to it, so
+/// it could not be made to look like the tiles around it.
+struct MenuTile: View {
+
+    enum Entry {
+        case item(String, isChecked: Bool = false, isEnabled: Bool = true, action: () -> Void)
+        case separator
+    }
+
+    /// Without a title the tile shrinks to its symbol and chevron, leaving the
+    /// rest of the row to the tile beside it.
+    var title: String?
+    let symbol: String
+    let entries: () -> [Entry]
+
+    var body: some View {
+        if let title {
+            Tile(title, symbol: symbol, trailing: .chevron) { popUp() }
+        } else {
+            Button { popUp() } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: symbol).font(.system(size: 15))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(TileStyle())
+            .frame(width: 62)
+        }
+    }
+
+    @MainActor private static var showing: NSMenu?
+
+    private func popUp() {
+        guard let event = NSApp.currentEvent,
+              let view = event.window?.contentView else { return }
+
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for entry in entries() {
+            switch entry {
+            case .separator:
+                menu.addItem(.separator())
+            case let .item(title, isChecked, isEnabled, action):
+                let item = ClosureMenuItem(title, handler: action)
+                item.state = isChecked ? .on : .off
+                item.isEnabled = isEnabled
+                menu.addItem(item)
+            }
+        }
+
+        // Held until the next menu replaces it, so the items, which are their own
+        // targets, outlive the call however late AppKit sends the action.
+        Self.showing = menu
+
+        // The hosting view is flipped, so the point is converted rather than read
+        // straight off the event.
+        menu.popUp(positioning: nil, at: view.convert(event.locationInWindow, from: nil), in: view)
+    }
+}
+
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func fire() { handler() }
+}
+
+/// The tile's look: a soft rounded square that brightens under the pointer.
+struct TileStyle: ButtonStyle {
+
+    func makeBody(configuration: Configuration) -> some View {
+        TileBody(configuration: configuration)
+    }
+
+    private struct TileBody: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        private var fill: Double {
+            if configuration.isPressed { return 0.15 }
+            return isHovered && isEnabled ? 0.10 : 0.06
+        }
+
+        var body: some View {
+            let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            configuration.label
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                .background(shape.fill(Color.primary.opacity(fill)))
+                .contentShape(shape)
+                .opacity(isEnabled ? 1 : 0.45)
+                .onHover { isHovered = $0 }
+                .animation(.easeOut(duration: 0.12), value: isHovered)
+        }
     }
 }

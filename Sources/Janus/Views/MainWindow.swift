@@ -1,15 +1,21 @@
 import SwiftUI
 import JanusCore
 
-/// The window. One tab for each tool whose accounts it switches, and one for
-/// the caches.
+/// Which section the window shows. Held outside the view so a tile in the widget
+/// can open the window at the section it is about.
+@MainActor
+final class ManageRouter: ObservableObject {
+    @Published var section: MainWindow.Section = .claude
+}
+
+/// The window behind the widget's Manage tile. One tab for each tool whose
+/// accounts it switches, and one for the caches.
 struct MainWindow: View {
 
     @ObservedObject var accounts: AccountsModel
     @ObservedObject var codex: CodexModel
     @ObservedObject var caches: CachesModel
-
-    @State private var section: Section = .claude
+    @ObservedObject var router: ManageRouter
 
     enum Section: String, CaseIterable, Identifiable {
         case claude = "Claude"
@@ -23,7 +29,7 @@ struct MainWindow: View {
             header
             Divider()
 
-            switch section {
+            switch router.section {
             case .claude:  AccountsView(model: accounts)
             case .codex:   CodexView(model: codex)
             case .storage: StorageView(model: caches)
@@ -39,7 +45,7 @@ struct MainWindow: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Picker("", selection: $section) {
+            Picker("", selection: $router.section) {
                 ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
